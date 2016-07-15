@@ -115,10 +115,7 @@
     "UseElasticIP": {
       "Type": "String",
       "Description": "Without Elastic IP, your EC2 instance public IP address will change everytime the system is restarted.",
-      "AllowedValues": [
-        "true",
-        "false"
-      ],
+      "AllowedValues": [ "true", "false" ],
       "ConstraintDescription": "Must be a boolean value.",
       "Default": "true"
     },
@@ -127,22 +124,20 @@
       "Description": "SSH Key pair for accessing your EC2 instance",
       "Type": "AWS::EC2::KeyPair::KeyName"
     },
+    "EC2VolumeSize": {
+      "Type": "String",
+      "Default": "100",
+      "Description": "ADOP Core EC2 volume size in GB."
+    },
     "EC2InstanceType": {
       "Type": "String",
       "Description": "ADOP Core EC2 HVM instance type.",
       "AllowedValues": [
-        "t2.small",
-        "t2.medium",
         "t2.large",
         "m4.large",
         "m4.xlarge",
-        "m4.2xlarge",
-        "m4.4xlarge",
-        "m4.10xlarge",
-        "m3.medium",
-        "m3.xlarge",
-        "m3.xlarge",
-        "m3.2xlarge"
+        "m3.large",
+        "m3.xlarge"
       ],
       "ConstraintDescription": "Must be a valid EC2 HVM instance type.",
       "Default": "m4.xlarge"
@@ -451,7 +446,7 @@
             "DeviceName": "/dev/xvda",
             "Ebs": {
               "DeleteOnTermination": "true",
-              "VolumeSize": 100,
+              "VolumeSize": { "Ref": "EC2VolumeSize" },
               "VolumeType": "gp2"
             }
           }
