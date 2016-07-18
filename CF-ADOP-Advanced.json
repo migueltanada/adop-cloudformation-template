@@ -84,9 +84,23 @@
         ]
       }
     },
-    "AdopEc2InternalIP": {
+    "NatOuterProxyPrivateIP": {
+      "Description": "The Nginx Proxy EC2 instance private IP address.",
+      "Value": {
+        "Fn::GetAtt": [
+          "NatOuterProxyEC2",
+          "PrivateIp"
+        ]
+      }
+    },
+    "AdopEc2PrivateIP": {
       "Description": "The ADOP EC2 instance private IP address.",
-      "Value": "10.10.2.100"
+      "Value": {
+        "Fn::GetAtt": [
+          "AdopEC2",
+          "PrivateIp"
+        ]
+      }
     },
     "AdopPlatformCredentials": {
       "Description": "View this file inside the Adop EC2 instance backend to see the platform auto generated passwords.",
@@ -115,7 +129,10 @@
     "UseElasticIP": {
       "Type": "String",
       "Description": "Without Elastic IP, your EC2 instance public IP address will change everytime the system is restarted.",
-      "AllowedValues": [ "true", "false" ],
+      "AllowedValues": [
+        "true",
+        "false"
+      ],
       "ConstraintDescription": "Must be a boolean value.",
       "Default": "true"
     },
@@ -141,6 +158,11 @@
       ],
       "ConstraintDescription": "Must be a valid EC2 HVM instance type.",
       "Default": "m4.xlarge"
+    },
+    "VpcCidrBlock": {
+      "Type": "String",
+      "Description": "VPC Cidr Block.",
+      "Default": "10.10.0.0/24"
     }
   },
   "Conditions": {
@@ -230,7 +252,9 @@
     },
     "Vpc": {
       "Properties": {
-        "CidrBlock": "10.10.0.0/16",
+        "CidrBlock": {
+          "Ref": "VpcCidrBlock"
+        },
         "EnableDnsHostnames": "true",
         "EnableDnsSupport": "true"
       },
@@ -363,9 +387,11 @@
             "GroupSet": [
               {
                 "Ref": "NatOuterProxySG"
+              },
+              {
+                "Ref": "DockerApiSG"
               }
             ],
-            "PrivateIpAddress": "10.10.1.100",
             "SubnetId": {
               "Ref": "PublicSubnet"
             }
@@ -410,11 +436,11 @@
                 "IP=$(hostname -i)\n",
                 "yum -y update\n",
                 "yum -y install docker\n",
+                "sed -i \"s#OPTIONS=.*#OPTIONS='-H tcp://0.0.0.0:2377 -H unix:///var/run/docker.sock --default-ulimit nofile=1024:4096'#\" /etc/sysconfig/docker\n",
                 "curl -L https://github.com/docker/compose/releases/download/1.7.1/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose\n",
                 "chmod +x /usr/local/bin/docker-compose && ln -sv /usr/local/bin/docker-compose /usr/bin/docker-compose\n",
                 "service docker start\n",
                 "chkconfig docker on\n",
-                "docker run --restart=always --name outer-proxy -e TARGET=10.10.2.100 -d -p 80:80 accenture/adop-outer-proxy:0.1.0\n",
                 "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
                 "\"Reason\" : \"NAT Instance is ready\",",
                 "\"UniqueId\" : \"IDNAT\",",
@@ -446,7 +472,9 @@
             "DeviceName": "/dev/xvda",
             "Ebs": {
               "DeleteOnTermination": "true",
-              "VolumeSize": { "Ref": "EC2VolumeSize" },
+              "VolumeSize": {
+                "Ref": "EC2VolumeSize"
+              },
               "VolumeType": "gp2"
             }
           }
@@ -462,9 +490,11 @@
               },
               {
                 "Ref": "MailServerSG"
+              },
+              {
+                "Ref": "DockerApiSG"
               }
             ],
-            "PrivateIpAddress": "10.10.2.100",
             "SubnetId": {
               "Ref": "PrivateSubnet"
             }
@@ -509,6 +539,11 @@
                 "#!/bin/bash\n",
                 "export IP=$(hostname --ip-address)\n",
                 "until [[ $(rpm -qa docker | wc -l) -gt 0 ]]; do yum -y install docker; echo \"Waiting until docker is installed..\"; sleep 5; done\n",
+                "sed -i \"#s/OPTIONS=.*#OPTIONS=\"-H tcp://0.0.0.0:2377 -H unix:///var/run/docker.sock --default-ulimit nofile=1024:4096 --storage-opt dm.loopdatasize=",
+                {
+                  "Ref": "EC2VolumeSize"
+                },
+                "G\"#\" /etc/sysconfig/docker\n",
                 "service docker start\n",
                 "chkconfig docker on\n",
                 "curl -L https://github.com/docker/compose/releases/download/1.7.1/docker-compose-`uname -s`-`uname -m` > /usr/local/bin/docker-compose\n",
@@ -520,6 +555,9 @@
                 "chmod -R 700 /adop/adop-docker-compose\n",
                 "cd /adop/adop-docker-compose\n",
                 "sleep 10\n",
+                "echo \"\n",
+                "export SMTP_DOMAIN=amazonaws.com\n",
+                "export ADOP_HOME=\"/adop/adop-docker-compose\"\n",
                 "export PUBLIC_IP=",
                 {
                   "Fn::GetAtt": [
@@ -528,12 +566,22 @@
                   ]
                 },
                 "\n",
-                "echo \"\n",
-                "export SMTP_DOMAIN=amazonaws.com\n",
-                "export ADOP_HOME=\"/adop/adop-docker-compose\"\n",
-                "export PUBLIC_IP=${PUBLIC_IP}\n",
-                "export TARGET_HOST=10.10.1.101\n",
-                "export LOGSTASH_HOST=10.10.1.101\n",
+                "export TARGET_HOST=",
+                {
+                  "Fn::GetAtt": [
+                    "NatOuterProxyEC2",
+                    "PrivateIp"
+                  ]
+                },
+                "\n",
+                "export LOGSTASH_HOST=",
+                {
+                  "Fn::GetAtt": [
+                    "NatOuterProxyEC2",
+                    "PrivateIp"
+                  ]
+                },
+                "\n",
                 "export VOLUME_DRIVER=local\n",
                 "export CUSTOM_NETWORK_NAME=adop-network\n",
                 "export ADOP_SMTP_ENABLED=true\n",
@@ -617,6 +665,9 @@
                   "Ref": "AdopWorkspace"
                 },
                 "\n",
+                "echo \"Deploying Nginx in outer proxy instance - ${PUBLIC_IP}..\"\n",
+                "export DOCKER_HOST=\"tcp://${TARGET_HOST}:2377\"\n",
+                "docker run --restart=always --name outer-proxy -e TARGET=${IP} -d -p 80:80 accenture/adop-outer-proxy:0.1.0\n",
                 "curl -X PUT -H 'Content-Type:' --data-binary '{\"Status\" : \"SUCCESS\",",
                 "\"Reason\" : \"ADOP is ready\",",
                 "\"UniqueId\" : \"IDAdopCompletion\",",
@@ -681,25 +732,45 @@
         "GroupDescription": "Mail Server Security Group",
         "SecurityGroupIngress": [
           {
-            "CidrIp": "10.10.0.0/16",
-            "FromPort": "8025",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "9025",
             "IpProtocol": "tcp",
-            "ToPort": "8025"
+            "ToPort": "9025"
           },
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "143",
             "IpProtocol": "tcp",
             "ToPort": "143"
           },
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "587",
             "IpProtocol": "tcp",
             "ToPort": "587"
           },
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "993",
             "IpProtocol": "tcp",
             "ToPort": "993"
@@ -721,25 +792,45 @@
         "GroupDescription": "Adop Instance Security Group",
         "SecurityGroupIngress": [
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "80",
             "IpProtocol": "tcp",
             "ToPort": "80"
           },
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "22",
             "IpProtocol": "tcp",
             "ToPort": "22"
           },
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "443",
             "IpProtocol": "tcp",
             "ToPort": "443"
           },
           {
-            "CidrIp": "10.10.0.0/16",
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
             "FromPort": "-1",
             "IpProtocol": "icmp",
             "ToPort": "-1"
@@ -796,6 +887,33 @@
           "id": "049f94c1-5d6d-4cf8-9f02-03d83e9dde62"
         }
       }
+    },
+    "DockerApiSG": {
+      "Type": "AWS::EC2::SecurityGroup",
+      "Properties": {
+        "GroupDescription": "Docker Engine Security Group.",
+        "SecurityGroupIngress": [
+          {
+            "CidrIp": {
+              "Fn::GetAtt": [
+                "Vpc",
+                "CidrBlock"
+              ]
+            },
+            "FromPort": "2377",
+            "IpProtocol": "tcp",
+            "ToPort": "2377"
+          }
+        ],
+        "VpcId": {
+          "Ref": "Vpc"
+        }
+      },
+      "Metadata": {
+        "AWS::CloudFormation::Designer": {
+          "id": "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2"
+        }
+      }
     }
   },
   "Metadata": {
@@ -823,6 +941,7 @@
         },
         "z": 1,
         "embeds": [
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2",
           "8246d075-3d2a-4ab5-934f-45a154f6eed4",
           "a31d4eed-b455-4c7c-8658-aedba20d70b4",
           "5f8a92e2-f223-4168-893e-02e01796aa86",
@@ -990,7 +1109,7 @@
         },
         "position": {
           "x": 1650,
-          "y": 790
+          "y": 740
         },
         "z": 2,
         "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
@@ -1362,7 +1481,8 @@
         ],
         "isrelatedto": [
           "5f8a92e2-f223-4168-893e-02e01796aa86",
-          "3dfe2a24-9f1c-4ff9-bfb3-afa9d81013e0"
+          "3dfe2a24-9f1c-4ff9-bfb3-afa9d81013e0",
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2"
         ]
       },
       "c48aeab8-eb45-4a74-a89a-8688260aae5d": {
@@ -1418,7 +1538,7 @@
         },
         "position": {
           "x": 1480,
-          "y": 990
+          "y": 980
         },
         "z": 3,
         "parent": "47a0f538-656e-497c-9a80-fbc052fccd00",
@@ -1431,7 +1551,8 @@
           "a31d4eed-b455-4c7c-8658-aedba20d70b4",
           "a2c90913-332c-4f4c-a123-63d38abeed7e",
           "a44e677b-c679-482b-929c-f1a7aa112926",
-          "7934e36f-378a-4447-aa93-674ae8a35be6"
+          "7934e36f-378a-4447-aa93-674ae8a35be6",
+          "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2"
         ]
       },
       "8246d075-3d2a-4ab5-934f-45a154f6eed4": {
@@ -1563,6 +1684,19 @@
           "id": "7b45ae17-bef2-4fd5-a5cd-58888c87753d"
         },
         "z": 11
+      },
+      "6d3033fd-be1c-4bfe-86cc-bfb6d68cd3d2": {
+        "size": {
+          "width": 60,
+          "height": 60
+        },
+        "position": {
+          "x": 1650,
+          "y": 820
+        },
+        "z": 2,
+        "parent": "a44e677b-c679-482b-929c-f1a7aa112926",
+        "embeds": []
       }
     }
   }
