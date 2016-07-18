@@ -158,11 +158,6 @@
       ],
       "ConstraintDescription": "Must be a valid EC2 HVM instance type.",
       "Default": "m4.xlarge"
-    },
-    "VpcCidrBlock": {
-      "Type": "String",
-      "Description": "VPC Cidr Block.",
-      "Default": "10.10.0.0/24"
     }
   },
   "Conditions": {
@@ -252,9 +247,7 @@
     },
     "Vpc": {
       "Properties": {
-        "CidrBlock": {
-          "Ref": "VpcCidrBlock"
-        },
+        "CidrBlock": "10.10.0.0/16",
         "EnableDnsHostnames": "true",
         "EnableDnsSupport": "true"
       },
